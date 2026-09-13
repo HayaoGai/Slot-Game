@@ -183,7 +183,7 @@ const camera: NodeSpec = {
     ],
 };
 
-/** 背景 1920x720：寬螢幕時填補設計解析度左右多露出的區域，不含資訊性內容 */
+/** 背景 1920x720：純裝飾，不含資訊性內容；網頁版畫面固定 16:9，實際只顯示中央 1280x720 */
 const background: NodeSpec = { name: 'Background', size: [1920, DESIGN_H], components: [sprite('backgroundSprite')] };
 
 const reelArea: NodeSpec = {
@@ -372,6 +372,7 @@ const ui: NodeSpec = {
             components: [label({ text: '', size: 32, color: '#ffd54a', bold: true }, 'winLabel')],
             children: [caption('WIN', 34)],
         },
+        textButton('CreditsButton', 566, 322, 128, 44, 'CREDITS', { fill: '#3b2a7a', stroke: '#8f7ad6', size: 20 }),
     ],
 };
 
@@ -409,6 +410,60 @@ const freeSpinPanel: NodeSpec = {
                 { name: 'MessageLabel', position: [0, 70], size: [1000, 120], components: [label({ text: 'FREE SPINS', size: 92, color: '#8ffcef', bold: true, outline: ['#032626', 6] }, 'fsMessage')] },
                 { name: 'SubLabel', position: [0, -30], size: [1000, 60], components: [label({ text: '', size: 44, bold: true }, 'fsSub')] },
                 { name: 'HintLabel', position: [0, -120], size: [1000, 40], components: [label({ text: 'TAP TO CONTINUE', size: 22, color: '#b7a6e8' }, 'fsHint')] },
+            ],
+        },
+    ],
+};
+
+/**
+ * 製作者資訊彈窗。開啟按鈕放在 UI 層（免費遊戲橫幅會蓋過它），彈窗本身排在最上層。
+ * 卡片也掛 BlockInputEvents，點卡片不會冒泡到遮罩而關閉。
+ */
+const credits: NodeSpec = {
+    name: 'Credits',
+    size: [DESIGN_W, DESIGN_H],
+    components: [
+        use(
+            'ui/CreditsPanel.ts',
+            {
+                openButton: ref('CreditsButtonButton'),
+                closeButton: ref('CreditsCloseButton'),
+                popup: ref('creditsPopup'),
+                card: ref('creditsCard'),
+                avatar: ref('creditsAvatar'),
+            },
+            'creditsPanel',
+        ),
+    ],
+    children: [
+        {
+            name: 'Popup',
+            key: 'creditsPopup',
+            active: false,
+            size: [1920, DESIGN_H],
+            components: [...panel('#000000b8', '#00000000', 0, 0), { type: 'cc.BlockInputEvents', props: {} }, opacity()],
+            children: [
+                {
+                    name: 'Card',
+                    key: 'creditsCard',
+                    size: [460, 420],
+                    components: [...panel('#1d1240f5', '#f2c14e', 4, 26), { type: 'cc.BlockInputEvents', props: {} }],
+                    children: [
+                        { name: 'Title', position: [0, 165], size: [300, 44], components: [label({ text: 'CREDITS', size: 34, color: '#ffd54a', bold: true, outline: ['#5a2a00', 3] })] },
+                        textButton('CreditsClose', 186, 166, 48, 48, '×', { fill: '#3b2a7a', stroke: '#8f7ad6', size: 30, radius: 24 }),
+                        { name: 'AvatarFrame', position: [0, 45], size: [176, 176], components: [...panel('#07031299', '#f2c14e', 4, 88)] },
+                        {
+                            name: 'AvatarMask',
+                            position: [0, 45],
+                            size: [164, 164],
+                            components: [graphics(), { type: 'cc.Mask', props: { _type: 1, _inverted: false, _segments: 64, _alphaThreshold: 0.1 } }],
+                            children: [{ name: 'Avatar', size: [164, 164], components: [sprite('creditsAvatar')] }],
+                        },
+                        { name: 'Name', position: [0, -80], size: [400, 48], components: [label({ text: 'Lance', size: 38, bold: true })] },
+                        { name: 'Email', position: [0, -122], size: [400, 30], components: [label({ text: 'hayaogai@gmail.com', size: 22, color: '#b7a6e8' })] },
+                        { name: 'Role', position: [0, -172], size: [400, 24], components: [label({ text: 'GAME DESIGN & DEVELOPMENT', size: 16, color: '#8f7ad6', bold: true })] },
+                    ],
+                },
             ],
         },
     ],
@@ -455,7 +510,8 @@ const canvas: NodeSpec = {
             },
         },
     ],
-    children: [camera, background, reelArea, winLayer, ui, freeSpinPanel, gameRoot],
+    // credits 排在最後：彈窗位於最上層，且不影響其他節點由路徑雜湊出的 id
+    children: [camera, background, reelArea, winLayer, ui, freeSpinPanel, gameRoot, credits],
 };
 
 writeScene(path.join(ROOT, 'assets/scenes/Main.scene'), [canvas]);

@@ -22,6 +22,7 @@ export class GameAssets {
     static background: SpriteFrame;
     static white: SpriteFrame;
     static glow: SpriteFrame;
+    static avatar: SpriteFrame;
 
     static loadAll(): Promise<void> {
         if (!GameAssets.loaded) GameAssets.loaded = GameAssets.doLoad();
@@ -43,10 +44,11 @@ export class GameAssets {
             load('prefabs/PaylineHighlight', Prefab),
             load('prefabs/WinLabel', Prefab),
         ]);
-        [GameAssets.background, GameAssets.white, GameAssets.glow] = await Promise.all([
+        [GameAssets.background, GameAssets.white, GameAssets.glow, GameAssets.avatar] = await Promise.all([
             load('textures/ui/background/spriteFrame', SpriteFrame),
             load('textures/ui/white/spriteFrame', SpriteFrame),
             load('textures/ui/glow/spriteFrame', SpriteFrame),
+            load('textures/ui/avatar/spriteFrame', SpriteFrame),
         ]);
     }
 }
