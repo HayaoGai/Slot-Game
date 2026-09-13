@@ -1,0 +1,15 @@
+{
+  "platform": "web-mobile",
+  "outputName": "web-mobile",
+  "buildPath": "project://build",
+  "debug": false,
+  "sourceMaps": false,
+  "md5Cache": false,
+  "mainBundleCompressionType": "merge_dep",
+  "packages": {
+    "web-mobile": {
+      "orientation": "landscape",
+      "embedWebDebugger": false
+    }
+  }
+}

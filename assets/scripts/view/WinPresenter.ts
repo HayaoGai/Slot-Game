@@ -120,8 +120,12 @@ export class WinPresenter extends Component {
         this.hideLineLabel();
     }
 
-    update(dt: number): void {
+    /** 在 BalanceDisplay 更新數值之後才同步，避免與下方贏分差一幀 */
+    lateUpdate(): void {
         if (this.bigWin?.active) this.bigWinAmount!.string = formatMoney(this.display!.displayedWin);
+    }
+
+    update(dt: number): void {
         if (this.loopTime >= 0) {
             this.loopTime += dt;
             this.paylines!.setHighlightOpacity(Math.round(175 + 80 * Math.sin(this.loopTime * 5)));
