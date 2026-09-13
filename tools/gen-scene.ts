@@ -222,7 +222,15 @@ const reelArea: NodeSpec = {
             })),
         },
         { name: 'FxLayer', size: [REEL_WINDOW_W + 60, REEL_WINDOW_H + 50], components: [graphics('fxGraphics')] },
-        { name: 'PaylineLayer', key: 'paylineLayer', size: [REEL_WINDOW_W + 60, REEL_WINDOW_H + 50], components: [graphics('paylineGraphics')] },
+        {
+            name: 'PaylineLayer',
+            key: 'paylineLayer',
+            size: [REEL_WINDOW_W + 60, REEL_WINDOW_H + 50],
+            components: [
+                graphics('paylineGraphics'),
+                use('view/PaylineRenderer.ts', { graphics: ref('paylineGraphics'), reelSet: ref('reelSet'), lineWidth: 4 }, 'paylineRenderer'),
+            ],
+        },
     ],
 };
 
@@ -231,6 +239,21 @@ const winLayer: NodeSpec = {
     key: 'winLayer',
     position: [0, REEL_AREA_Y],
     size: [REEL_WINDOW_W, REEL_WINDOW_H],
+    components: [
+        use(
+            'view/WinPresenter.ts',
+            {
+                paylines: ref('paylineRenderer'),
+                reelSet: ref('reelSet'),
+                display: ref('balanceDisplay'),
+                labelLayer: ref('winLabels'),
+                bigWin: ref('bigWin'),
+                bigWinTitle: ref('bigWinTitle'),
+                bigWinAmount: ref('bigWinAmount'),
+            },
+            'winPresenter',
+        ),
+    ],
     children: [
         { name: 'Labels', key: 'winLabels', size: [REEL_WINDOW_W, REEL_WINDOW_H] },
         {
@@ -262,7 +285,25 @@ const controlBar: NodeSpec = {
     key: 'controlBar',
     position: [0, CONTROL_BAR_Y],
     size: [1240, 104],
-    components: [...panel('#0e0822f0', '#ffffff33', 2, 22)],
+    components: [
+        ...panel('#0e0822f0', '#ffffff33', 2, 22),
+        use(
+            'ui/ControlBar.ts',
+            {
+                spinButton: ref('SpinButtonButton'),
+                spinLabel: ref('SpinButtonLabel'),
+                betMinus: ref('BetMinusButton'),
+                betPlus: ref('BetPlusButton'),
+                betLabel: ref('betLabel'),
+                autoButton: ref('AutoButtonButton'),
+                autoLabel: ref('AutoButtonLabel'),
+                autoMenu: ref('autoMenu'),
+                autoOptions: [ref('Auto10Button'), ref('Auto25Button'), ref('Auto50Button')],
+                turboToggle: ref('turboToggle'),
+            },
+            'controlBarComp',
+        ),
+    ],
     children: [
         textButton('BetMinus', 20, -6, 58, 58, '−', { fill: '#3b2a7a', stroke: '#8f7ad6', size: 34, radius: 29 }),
         {
@@ -314,6 +355,7 @@ const controlBar: NodeSpec = {
 const ui: NodeSpec = {
     name: 'UI',
     size: [DESIGN_W, DESIGN_H],
+    components: [use('ui/BalanceDisplay.ts', { balanceLabel: ref('balanceLabel'), winLabel: ref('winLabel') }, 'balanceDisplay')],
     children: [
         controlBar,
         {
@@ -364,11 +406,10 @@ const gameRoot: NodeSpec = {
     components: [
         use('GameController.ts', {
             reelSet: ref('reelSet'),
+            winPresenter: ref('winPresenter'),
+            controlBar: ref('controlBarComp'),
+            balanceDisplay: ref('balanceDisplay'),
             background: ref('backgroundSprite'),
-            spinButton: ref('SpinButtonButton'),
-            spinLabel: ref('SpinButtonLabel'),
-            balanceLabel: ref('balanceLabel'),
-            winLabel: ref('winLabel'),
         }),
     ],
 };

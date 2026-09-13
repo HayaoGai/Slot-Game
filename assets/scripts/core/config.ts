@@ -21,6 +21,8 @@ export const BET_LEVELS: readonly number[] = [25, 50, 100, 250, 500, 1000, 2500]
 export const DEFAULT_BET_INDEX = 2;
 export const INITIAL_BALANCE = 100_000;
 
+export const AUTOPLAY_COUNTS: readonly number[] = [10, 25, 50];
+
 export const TARGET_RTP = 0.96;
 export const RTP_TOLERANCE = 0.005;
 export const TARGET_HIT_FREQUENCY: readonly [number, number] = [0.25, 0.32];

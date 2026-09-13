@@ -108,7 +108,8 @@ export class ReelSet extends Component {
     /** 快速停止：取消所有等待與 anticipation，剩餘欄位立即停輪 */
     requestQuickStop(): void {
         this.quickStop = true;
-        for (const resolve of [...this.waiters]) resolve();
+        // 引擎的 Babel 設定以寬鬆模式轉譯 spread / for-of，Set 必須先轉成陣列
+        Array.from(this.waiters).forEach((resolve) => resolve());
         this.waiters.clear();
     }
 
@@ -124,6 +125,10 @@ export class ReelSet extends Component {
     dimExcept(positions: readonly Position[]): void {
         const lit = new Set(positions.map(([r, c]) => `${r},${c}`));
         this.forEachVisible((view, reel, row) => view.setDim(!lit.has(`${reel},${row}`)));
+    }
+
+    stopWinAnimations(): void {
+        this.forEachVisible((view) => view.stopWinAnimation());
     }
 
     resetSymbols(): void {
@@ -150,7 +155,7 @@ export class ReelSet extends Component {
         g.clear();
         const pulse = 0.55 + 0.45 * Math.sin(this.fxTime * 10);
         const center = new Vec3();
-        for (const reel of this.anticipating) {
+        for (const reel of Array.from(this.anticipating)) {
             this.cellPosition(reel, 1, center);
             const w = this.cellWidth + 12;
             const h = this.cellHeight * ROW_COUNT + 12;
