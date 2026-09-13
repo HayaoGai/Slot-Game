@@ -1,7 +1,27 @@
 {
   "name": "Slot-Game",
+  "private": true,
   "uuid": "e0fb32cb-a620-4205-9fab-e1bc9b36768b",
   "creator": {
     "version": "3.8.8"
+  },
+  "scripts": {
+    "lint": "eslint --ext .ts --no-error-on-unmatched-pattern assets/scripts tools tests",
+    "typecheck": "tsc -p tsconfig.tools.json",
+    "test": "vitest run --passWithNoTests",
+    "gen:symbols": "tsx tools/gen-symbols.ts",
+    "gen:scene": "tsx tools/gen-scene.ts",
+    "simulate": "tsx tools/simulate.ts",
+    "tune": "tsx tools/tune-strips.ts"
+  },
+  "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "@types/node": "^26.5.1",
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
+    "eslint": "^8.57.1",
+    "tsx": "^4.23.13",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.0"
   }
 }

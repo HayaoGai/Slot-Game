@@ -4,6 +4,7 @@
 
   /* Add your custom configuration here. */
   "compilerOptions": {
-    "strict": false
-  }
+    "strict": true
+  },
+  "exclude": ["node_modules", "library", "temp", "build", "tools", "tests", "vitest.config.ts"]
 }
