@@ -5,7 +5,9 @@
 library/
 temp/
 local/
-build/
+# 建置產物只保留 web-desktop（部署到 Cloudflare Pages 使用）
+/build/*
+!/build/web-desktop/
 profiles/
 native
 #//////////////////////////

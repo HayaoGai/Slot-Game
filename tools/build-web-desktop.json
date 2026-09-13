@@ -1,0 +1,9 @@
+{
+  "platform": "web-desktop",
+  "outputName": "web-desktop",
+  "buildPath": "project://build",
+  "debug": false,
+  "sourceMaps": false,
+  "md5Cache": false,
+  "mainBundleCompressionType": "merge_dep"
+}

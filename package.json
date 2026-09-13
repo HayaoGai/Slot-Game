@@ -12,7 +12,8 @@
     "gen:symbols": "tsx tools/gen-symbols.ts",
     "gen:scene": "tsx tools/gen-scene.ts",
     "simulate": "tsx tools/simulate.ts",
-    "tune": "tsx tools/tune-strips.ts"
+    "tune": "tsx tools/tune-strips.ts",
+    "build:web": "bash tools/build-web.sh"
   },
   "devDependencies": {
     "@resvg/resvg-js": "^2.6.2",

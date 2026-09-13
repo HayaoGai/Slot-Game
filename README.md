@@ -324,15 +324,17 @@ pnpm gen:scene     # 重新產生 Main.scene 與 prefab
 
 以 Cocos Creator 3.8.8 開啟專案根目錄，開啟 `assets/scenes/Main.scene` 後按預覽即可。
 
-建置 Web Mobile 版本（亦可在編輯器的「專案 → 建置」操作）。建置參數放在 [`tools/build-web-mobile.json`](tools/build-web-mobile.json)（release、橫式）：
+### 建置與部署
 
 ```bash
-# Windows 範例；請依 Cocos Creator 安裝路徑調整。
-# 若在 VS Code 等 Electron 應用的終端機中執行，需先移除 ELECTRON_RUN_AS_NODE 環境變數。
-"C:\ProgramData\cocos\editors\Creator\3.8.8\CocosCreator.exe" --project . --build "configPath=./tools/build-web-mobile.json"
+pnpm build:web
 ```
 
-產物位於 `build/web-mobile/`（約 4 MB），以任意靜態伺服器提供即可在瀏覽器執行，例如 `npx serve build/web-mobile`。
+[`tools/build-web.sh`](tools/build-web.sh) 會以 Cocos Creator 3.8.8 命令列、依 [`tools/build-web-desktop.json`](tools/build-web-desktop.json)（release）建置 web-desktop 版本；建置成功（退出碼 36）後，自動執行 `/commit` 將所有變更連同 `build/web-desktop/` 產物一起提交。
+
+- 找不到執行檔時，可用環境變數 `COCOS_CREATOR`、`CLAUDE_BIN` 指定路徑。
+- 網頁圖示放在 `build-templates/web-desktop/favicon.ico`，建置時會自動複製到產物中。
+- 產物約 4 MB，也可以任意靜態伺服器在本機預覽，例如 `npx serve build/web-desktop`。
 
 ### Debug 參數
 
