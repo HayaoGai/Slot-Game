@@ -336,6 +336,18 @@ pnpm build:web
 - 網頁圖示放在 `build-templates/web-desktop/favicon.ico`，建置時會自動複製到產物中。
 - 產物約 4 MB，也可以任意靜態伺服器在本機預覽，例如 `npx serve build/web-desktop`。
 
+網站以 Cloudflare Pages 的 Git 整合部署：Pages 專案連接此 GitHub repository，push 到 `master` 後由 Cloudflare 自動部署已提交的 `build/web-desktop/`。Cocos Creator 只在本機建置，Cloudflare 端不執行建置。
+
+Pages 專案設定：
+
+| 設定 | 值 |
+|---|---|
+| Production branch | `master` |
+| Framework preset | None |
+| Build command | （留空） |
+| Build output directory | `build/web-desktop` |
+| 環境變數 | `SKIP_DEPENDENCY_INSTALL` = `1`（略過 pnpm install，工具鏈依賴不需要在 Cloudflare 上安裝） |
+
 ### Debug 參數
 
 | 參數 | 說明 |

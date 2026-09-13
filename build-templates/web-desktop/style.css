@@ -1,0 +1,49 @@
+body {
+  cursor: default;
+  padding: 0;
+  border: 0;
+  margin: 0;
+  text-align: center;
+  background-color: black;
+  font-family: Helvetica, Verdana, Arial, sans-serif;
+}
+
+body, canvas, div {
+  outline: none;
+  -moz-user-select: none;
+  -webkit-user-select: none;
+  -ms-user-select: none;
+  -khtml-user-select: none;
+  -webkit-tap-highlight-color: black;
+}
+
+/* Remove spin of input type number */
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+  /* display: none; <- Crashes Chrome on hover */
+  -webkit-appearance: none;
+  margin: 0; /* <-- Apparently some margin are still there even though it's hidden */
+}
+
+canvas {
+  background-color: black;
+}
+
+#GameDiv {
+  margin: 0;
+  position: relative;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+#Cocos3dGameContainer, #GameCanvas {
+  width: 100%;
+  height: 100%;
+}
+
+:root {
+  --safe-top: env(safe-area-inset-top);
+  --safe-right: env(safe-area-inset-right);
+  --safe-bottom: env(safe-area-inset-bottom);
+  --safe-left: env(safe-area-inset-left);
+}
