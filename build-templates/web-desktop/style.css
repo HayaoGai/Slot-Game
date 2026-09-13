@@ -6,6 +6,12 @@ body {
   text-align: center;
   background-color: black;
   font-family: Helvetica, Verdana, Arial, sans-serif;
+  /* 遊戲畫面在視窗中水平、垂直置中 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  overflow: hidden;
 }
 
 body, canvas, div {
@@ -29,7 +35,9 @@ canvas {
   background-color: black;
 }
 
+/* 寬高由 index.html 的 fitGameDiv() 寫入 inline style（引擎以此元素尺寸作為畫布尺寸） */
 #GameDiv {
+  flex: none;
   margin: 0;
   position: relative;
   box-sizing: border-box;

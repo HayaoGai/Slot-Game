@@ -17,11 +17,36 @@
     <link rel="icon" href="favicon.ico"/>
   </head>
   <body>
-    <div id="GameDiv" cc_exact_fit_screen="true" style="width: 100vw; height: 100vh;">
+    <div id="GameDiv" cc_exact_fit_screen="true">
       <div id="Cocos3dGameContainer">
         <canvas id="GameCanvas" width="1280" height="960" tabindex="99"></canvas>
       </div>
     </div>
+    <script>
+      // 16:9 等比縮放：瀏覽器寬高比 <= 16:9 時遊戲寬 = 瀏覽器寬，否則遊戲高 = 瀏覽器高。
+      // 尺寸必須寫在 GameDiv 的 inline style：引擎只在 inline style 改變時才發出 window-resize，
+      // 否則縮放視窗後 view 的縮放比例不會更新，按鈕點擊範圍會停在舊位置。
+      // 此監聽器須早於引擎註冊，才能在引擎處理 resize 前先更新尺寸。
+      (function () {
+        var gameDiv = document.getElementById('GameDiv');
+        function fitGameDiv() {
+          var winW = window.innerWidth;
+          var winH = window.innerHeight;
+          var w, h;
+          if (winW / winH <= 16 / 9) {
+            w = winW;
+            h = Math.floor(winW * 9 / 16);
+          } else {
+            h = winH;
+            w = Math.floor(winH * 16 / 9);
+          }
+          gameDiv.style.width = w + 'px';
+          gameDiv.style.height = h + 'px';
+        }
+        fitGameDiv();
+        window.addEventListener('resize', fitGameDiv);
+      })();
+    </script>
     <!-- Polyfills bundle. -->
     <script src="src/polyfills.bundle.js" charset="utf-8"> </script>    
     <!-- SystemJS support. -->
