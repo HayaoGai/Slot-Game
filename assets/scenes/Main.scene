@@ -25,7 +25,7 @@
     "_prefab": null,
     "autoReleaseAssets": false,
     "_globals": {
-      "__id__": 204
+      "__id__": 205
     },
     "_id": "edd1e7a3-7595-4fde-a3ef-55c229c4df2f"
   },
@@ -57,19 +57,19 @@
         "__id__": 162
       },
       {
-        "__id__": 192
+        "__id__": 193
       }
     ],
     "_active": true,
     "_components": [
       {
-        "__id__": 195
-      },
-      {
         "__id__": 196
       },
       {
         "__id__": 197
+      },
+      {
+        "__id__": 198
       }
     ],
     "_prefab": null,
@@ -3201,7 +3201,7 @@
     "_prefab": null,
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": -30,
+      "x": -34,
       "y": 0,
       "z": 0
     },
@@ -3240,8 +3240,8 @@
     "__prefab": null,
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 16,
-      "height": 16
+      "width": 14,
+      "height": 14
     },
     "_anchorPoint": {
       "__type__": "cc.Vec2",
@@ -3304,7 +3304,7 @@
     "_prefab": null,
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": 10,
+      "x": 12,
       "y": 0,
       "z": 0
     },
@@ -3373,10 +3373,10 @@
     "_string": "TURBO",
     "_horizontalAlign": 1,
     "_verticalAlign": 1,
-    "_actualFontSize": 18,
-    "_fontSize": 18,
+    "_actualFontSize": 17,
+    "_fontSize": 17,
     "_fontFamily": "Arial",
-    "_lineHeight": 22,
+    "_lineHeight": 20,
     "_overflow": 0,
     "_enableWrapText": false,
     "_font": null,
@@ -5490,6 +5490,9 @@
     "_components": [
       {
         "__id__": 191
+      },
+      {
+        "__id__": 192
       }
     ],
     "_prefab": null,
@@ -6544,6 +6547,36 @@
     "_id": "cf4+/T+It6PViipVPJat4k"
   },
   {
+    "__type__": "0b0fcIDrThJyLXHAKE8VtU9",
+    "_name": "",
+    "_objFlags": 0,
+    "__editorExtras__": {},
+    "node": {
+      "__id__": 162
+    },
+    "_enabled": true,
+    "__prefab": null,
+    "titleLabel": {
+      "__id__": 169
+    },
+    "remainingLabel": {
+      "__id__": 172
+    },
+    "multiplierLabel": {
+      "__id__": 175
+    },
+    "overlay": {
+      "__id__": 176
+    },
+    "messageLabel": {
+      "__id__": 179
+    },
+    "subLabel": {
+      "__id__": 182
+    },
+    "_id": "8fiKiHhq1+zQNCoHwox7xI"
+  },
+  {
     "__type__": "cc.Node",
     "_name": "GameRoot",
     "_objFlags": 0,
@@ -6555,10 +6588,10 @@
     "_active": true,
     "_components": [
       {
-        "__id__": 193
+        "__id__": 194
       },
       {
-        "__id__": 194
+        "__id__": 195
       }
     ],
     "_prefab": null,
@@ -6597,7 +6630,7 @@
     "_objFlags": 0,
     "__editorExtras__": {},
     "node": {
-      "__id__": 192
+      "__id__": 193
     },
     "_enabled": true,
     "__prefab": null,
@@ -6619,7 +6652,7 @@
     "_objFlags": 0,
     "__editorExtras__": {},
     "node": {
-      "__id__": 192
+      "__id__": 193
     },
     "_enabled": true,
     "__prefab": null,
@@ -6634,6 +6667,9 @@
     },
     "balanceDisplay": {
       "__id__": 161
+    },
+    "freeSpinPanel": {
+      "__id__": 192
     },
     "background": {
       "__id__": 7
@@ -6832,22 +6868,22 @@
   {
     "__type__": "cc.SceneGlobals",
     "ambient": {
-      "__id__": 198
-    },
-    "shadows": {
       "__id__": 199
     },
-    "_skybox": {
+    "shadows": {
       "__id__": 200
     },
-    "fog": {
+    "_skybox": {
       "__id__": 201
     },
-    "octree": {
+    "fog": {
       "__id__": 202
     },
-    "skin": {
+    "octree": {
       "__id__": 203
+    },
+    "skin": {
+      "__id__": 204
     }
   }
 ]

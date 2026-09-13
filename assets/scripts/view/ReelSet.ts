@@ -87,6 +87,7 @@ export class ReelSet extends Component {
                 await Promise.all(landings);
                 for (let j = i; j < this.reels.length; j++) this.reels[j].setSpeed(timing.anticipationSpeed);
                 this.anticipating.add(i);
+                console.log(`[anticipation] reel ${i} (${landedScatters} scatters landed)`);
                 AudioManager.instance.play('anticipation');
                 await this.wait(timing.anticipationTime);
             }

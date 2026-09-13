@@ -1,5 +1,5 @@
-import { _decorator, Component, Sprite } from 'cc';
-import { BET_LEVELS, DEFAULT_BET_INDEX, INITIAL_BALANCE, REEL_COUNT } from './core/config';
+import { _decorator, Component, Node, Sprite } from 'cc';
+import { BET_LEVELS, DEFAULT_BET_INDEX, FREE_SPIN_MAX_MULTIPLIER, FREE_SPIN_START_MULTIPLIER, INITIAL_BALANCE, REEL_COUNT } from './core/config';
 import { REEL_STRIPS } from './core/reelStrips';
 import { createRandom } from './core/rng';
 import { SlotEngine } from './core/slotEngine';
@@ -7,6 +7,7 @@ import type { SpinResult } from './core/types';
 import { BalanceDisplay } from './ui/BalanceDisplay';
 import { ControlBar } from './ui/ControlBar';
 import { formatMoney } from './ui/format';
+import { FreeSpinPanel } from './view/FreeSpinPanel';
 import { GameAssets } from './view/GameAssets';
 import { NORMAL_TIMING, ReelSet, TURBO_TIMING, type ReelTiming } from './view/ReelSet';
 import { WinPresenter } from './view/WinPresenter';
@@ -40,11 +41,17 @@ const TRANSITIONS: Readonly<Record<GameState, readonly GameState[]>> = {
     [GameState.FREESPIN_OUTRO]: [GameState.IDLE],
 };
 
-type Input = { type: 'spin' } | { type: 'bet'; delta: number } | { type: 'turbo'; on: boolean };
+type Input =
+    | { type: 'spin' }
+    | { type: 'bet'; delta: number }
+    | { type: 'autoStart'; count: number }
+    | { type: 'autoStop' }
+    | { type: 'turbo'; on: boolean };
 
 interface DebugParams {
     seed: number | null;
     autospin: number;
+    auto: number;
     turbo: boolean;
 }
 
@@ -54,6 +61,7 @@ function readDebugParams(): DebugParams {
     return {
         seed: seed !== null ? Number(seed) : null,
         autospin: Number(search.get('autospin') ?? 0),
+        auto: Number(search.get('auto') ?? 0),
         turbo: search.get('turbo') === '1',
     };
 }
@@ -62,7 +70,7 @@ function readDebugParams(): DebugParams {
  * 狀態機主控。
  * - 狀態切換只能經由 enter()，並以 TRANSITIONS 檢查合法性
  * - 所有玩家輸入都經由 handleInput()，依目前狀態決定是否接受與如何解讀
- * - 引擎只產生結果；餘額由此處管理
+ * - 引擎只產生結果；餘額、autoplay 與 turbo 由此處管理
  */
 @ccclass('GameController')
 export class GameController extends Component {
@@ -78,6 +86,9 @@ export class GameController extends Component {
     @property(BalanceDisplay)
     balanceDisplay: BalanceDisplay | null = null;
 
+    @property(FreeSpinPanel)
+    freeSpinPanel: FreeSpinPanel | null = null;
+
     @property(Sprite)
     background: Sprite | null = null;
 
@@ -87,11 +98,15 @@ export class GameController extends Component {
     private balance = INITIAL_BALANCE;
     private betIndex = DEFAULT_BET_INDEX;
     private turbo = false;
+    /** null 表示未在自動旋轉 */
+    private autoplayRemaining: number | null = null;
     private readonly stateWaiters: { state: GameState; resolve: () => void }[] = [];
 
+    private rounds = 0;
     private spinCount = 0;
     private gridMismatches = 0;
     private winMismatches = 0;
+    private multiplierMismatches = 0;
 
     get currentState(): GameState {
         return this.state;
@@ -125,7 +140,10 @@ export class GameController extends Component {
         const bar = this.controlBar!.node;
         bar.on(ControlBar.EVENT_SPIN, () => this.handleInput({ type: 'spin' }));
         bar.on(ControlBar.EVENT_BET, (delta: number) => this.handleInput({ type: 'bet', delta }));
+        bar.on(ControlBar.EVENT_AUTO_START, (count: number) => this.handleInput({ type: 'autoStart', count }));
+        bar.on(ControlBar.EVENT_AUTO_STOP, () => this.handleInput({ type: 'autoStop' }));
         bar.on(ControlBar.EVENT_TURBO, (on: boolean) => this.handleInput({ type: 'turbo', on }));
+        this.freeSpinPanel!.overlayNode.on(Node.EventType.TOUCH_END, () => this.handleInput({ type: 'spin' }));
 
         this.controlBar!.setTurbo(this.turbo);
         this.balanceDisplay!.setBalance(this.balance);
@@ -135,6 +153,7 @@ export class GameController extends Component {
         console.log(`[GameController] ready, seed=${seed}`);
 
         if (params.autospin > 0) void this.runAutospin(params.autospin);
+        else if (params.auto > 0) void this.runAutoplayCheck(params.auto);
     }
 
     // ─── 狀態 ───────────────────────────────────────────────────────────
@@ -159,16 +178,28 @@ export class GameController extends Component {
 
     private handleInput(input: Input): void {
         if (!this.ready) return;
+
+        // 任何狀態都接受：turbo 下一次旋轉生效；停止 autoplay 在本輪結束後生效
         if (input.type === 'turbo') {
-            // 任何狀態都可切換，下一次旋轉生效
             this.turbo = input.on;
+            return;
+        }
+        if (input.type === 'autoStop') {
+            this.stopAutoplay('stopped by player');
             return;
         }
 
         switch (this.state) {
             case GameState.IDLE:
-                if (input.type === 'spin') void this.playRound();
-                else if (input.type === 'bet') this.changeBet(input.delta);
+                if (input.type === 'spin') {
+                    void this.playRound();
+                } else if (input.type === 'bet') {
+                    this.changeBet(input.delta);
+                } else if (input.type === 'autoStart') {
+                    this.autoplayRemaining = input.count;
+                    console.log(`[autoplay] start ${input.count}`);
+                    void this.playRound();
+                }
                 break;
             case GameState.SPINNING:
             case GameState.STOPPING:
@@ -177,6 +208,11 @@ export class GameController extends Component {
                 break;
             case GameState.PRESENT_WIN:
                 if (input.type === 'spin') this.winPresenter!.skip();
+                break;
+            case GameState.FREESPIN_INTRO:
+            case GameState.FREESPIN_LOOP:
+            case GameState.FREESPIN_OUTRO:
+                if (input.type === 'spin') this.freeSpinPanel!.skip();
                 break;
             default:
                 break;
@@ -189,18 +225,26 @@ export class GameController extends Component {
         this.enter(GameState.DEDUCT_BET);
         const bet = this.bet;
         if (this.balance < bet) {
+            this.stopAutoplay('insufficient balance');
             console.warn('[GameController] insufficient balance');
             this.enter(GameState.IDLE);
             return;
         }
+        if (this.autoplayRemaining !== null) this.autoplayRemaining = Math.max(0, this.autoplayRemaining - 1);
+        this.rounds++;
         this.balance -= bet;
         this.balanceDisplay!.setBalance(this.balance);
 
         await this.runSpin(this.engine.spin(bet), bet);
 
         this.enter(GameState.CHECK_FREESPIN);
-        if (this.engine.isInFreeSpin()) await this.runFreeSpins(bet);
+        if (this.engine.isInFreeSpin()) {
+            this.stopAutoplay('free spins triggered');
+            await this.runFreeSpins(bet);
+        }
+
         this.enter(GameState.IDLE);
+        this.continueAutoplay();
     }
 
     /** SPINNING → STOPPING → EVALUATE →（PRESENT_WIN） */
@@ -230,19 +274,62 @@ export class GameController extends Component {
     }
 
     private async runFreeSpins(bet: number): Promise<void> {
+        const panel = this.freeSpinPanel!;
+        const initial = this.engine.getFreeSpinState();
+        panel.show();
+        panel.updateHud(initial.remaining, initial.multiplier);
+
         this.enter(GameState.FREESPIN_INTRO);
-        console.log(`[freespin] triggered: ${this.engine.getFreeSpinState().remaining} spins`);
-        await this.delay(this.turbo ? 0.4 : 1);
+        console.log(`[freespin] triggered: ${initial.remaining} spins`);
+        await panel.showIntro(initial.remaining, this.turbo);
 
         for (;;) {
             this.enter(GameState.FREESPIN_LOOP);
             if (!this.engine.isInFreeSpin()) break;
-            await this.runSpin(this.engine.spinFree(bet), bet);
+
+            const before = this.engine.getFreeSpinState();
+            panel.updateHud(before.remaining - 1, before.multiplier);
+            const result = this.engine.spinFree(bet);
+            const after = this.engine.getFreeSpinState();
+            this.verifyMultiplier(before.spinsPlayed + 1, result.multiplier);
+            console.log(
+                `[freespin] spin ${after.spinsPlayed} x${result.multiplier} remaining=${after.remaining} ` +
+                    `win=${formatMoney(result.totalWin)} total=${formatMoney(after.totalWin)}`,
+            );
+
+            await this.runSpin(result, bet);
+
+            if (result.scatterWin) {
+                this.enter(GameState.FREESPIN_LOOP);
+                console.log(`[freespin] retrigger +${result.scatterWin.freeSpinsAwarded}, remaining=${after.remaining}, multiplier kept x${after.multiplier}`);
+                await panel.showRetrigger(result.scatterWin.freeSpinsAwarded, this.turbo);
+            }
+            panel.updateHud(after.remaining, after.multiplier);
         }
 
+        const final = this.engine.getFreeSpinState();
         this.enter(GameState.FREESPIN_OUTRO);
-        console.log(`[freespin] finished: total ${formatMoney(this.engine.getFreeSpinState().totalWin)}`);
-        await this.delay(this.turbo ? 0.4 : 1);
+        console.log(`[freespin] finished: ${final.spinsPlayed} spins, total ${formatMoney(final.totalWin)}`);
+        await panel.showOutro(final.totalWin, this.turbo);
+        panel.hide();
+    }
+
+    private continueAutoplay(): void {
+        if (this.autoplayRemaining === null) return;
+        if (this.autoplayRemaining <= 0) {
+            this.stopAutoplay('finished');
+            return;
+        }
+        this.scheduleOnce(() => {
+            if (this.state === GameState.IDLE && this.autoplayRemaining !== null) void this.playRound();
+        }, this.turbo ? 0.25 : 0.8);
+    }
+
+    private stopAutoplay(reason: string): void {
+        if (this.autoplayRemaining === null) return;
+        console.log(`[autoplay] ${reason} (remaining ${this.autoplayRemaining})`);
+        this.autoplayRemaining = null;
+        this.refreshControls();
     }
 
     private changeBet(delta: number): void {
@@ -254,13 +341,13 @@ export class GameController extends Component {
         const bar = this.controlBar;
         if (!bar || !this.ready) return;
         const s = this.state;
-        const idle = s === GameState.IDLE;
-        bar.setBet(this.bet, this.betIndex > 0, this.betIndex < BET_LEVELS.length - 1, idle);
+        const manual = s === GameState.IDLE && this.autoplayRemaining === null;
+        bar.setBet(this.bet, this.betIndex > 0, this.betIndex < BET_LEVELS.length - 1, manual);
 
         if (s === GameState.SPINNING || s === GameState.STOPPING) bar.setSpin('stop', true);
-        else if (s === GameState.PRESENT_WIN) bar.setSpin('skip', true);
-        else bar.setSpin('spin', idle);
-        bar.setAutoplay(null, idle);
+        else if (s === GameState.PRESENT_WIN || s === GameState.FREESPIN_INTRO || s === GameState.FREESPIN_OUTRO) bar.setSpin('skip', true);
+        else bar.setSpin('spin', manual);
+        bar.setAutoplay(this.autoplayRemaining, manual);
     }
 
     private delay(seconds: number): Promise<void> {
@@ -286,23 +373,56 @@ export class GameController extends Component {
         const displayed = this.balanceDisplay!.displayedWin;
         const ok = presented === result.totalWin && displayed === result.totalWin;
         if (!ok) this.winMismatches++;
-        const msg = `[verify-win] spin #${this.spinCount} engine=${formatMoney(result.totalWin)} presented=${formatMoney(presented)} displayed=${formatMoney(displayed)} lines=${result.lineWins.length}${result.scatterWin ? ' +scatter' : ''} ${ok ? 'OK' : 'MISMATCH'}`;
+        const msg =
+            `[verify-win] spin #${this.spinCount} engine=${formatMoney(result.totalWin)} presented=${formatMoney(presented)} ` +
+            `displayed=${formatMoney(displayed)} lines=${result.lineWins.length}${result.scatterWin ? ' +scatter' : ''} ${ok ? 'OK' : 'MISMATCH'}`;
         if (ok) console.log(msg);
         else console.error(msg);
     }
 
+    private verifyMultiplier(freeSpinNumber: number, actual: number): void {
+        const expected = Math.min(FREE_SPIN_START_MULTIPLIER + freeSpinNumber - 1, FREE_SPIN_MAX_MULTIPLIER);
+        if (expected !== actual) {
+            this.multiplierMismatches++;
+            console.error(`[verify-fs] free spin ${freeSpinNumber}: expected x${expected}, got x${actual}`);
+        }
+    }
+
+    private logSummary(heapBefore: number): void {
+        const heap = GameController.heap();
+        console.log(
+            `[verify] done rounds=${this.rounds} spins=${this.spinCount} gridMismatches=${this.gridMismatches} winMismatches=${this.winMismatches} ` +
+                `multiplierMismatches=${this.multiplierMismatches} symbolNodes=${this.reelSet!.countSymbolNodes()} (expected ${REEL_COUNT * 5}) ` +
+                `balance=${formatMoney(this.balance)} heapMB ${(heapBefore / 1048576).toFixed(1)} -> ${(heap / 1048576).toFixed(1)}`,
+        );
+    }
+
+    /** ?autospin=N：透過正常輸入流程連續旋轉 N 次 */
     private async runAutospin(count: number): Promise<void> {
-        const heap = () => (performance as unknown as { memory?: { usedJSHeapSize: number } }).memory?.usedJSHeapSize ?? 0;
-        const heapBefore = heap();
+        const heapBefore = GameController.heap();
         for (let i = 0; i < count; i++) {
             await this.waitForState(GameState.IDLE);
+            if (i > 0 && i % 50 === 0) console.log(`[heap-probe] round ${i}`);
             this.handleInput({ type: 'spin' });
         }
         await this.waitForState(GameState.IDLE);
-        console.log(
-            `[verify] done spins=${this.spinCount} gridMismatches=${this.gridMismatches} winMismatches=${this.winMismatches} ` +
-                `symbolNodes=${this.reelSet!.countSymbolNodes()} (expected ${REEL_COUNT * 5}) balance=${formatMoney(this.balance)} ` +
-                `heapMB ${(heapBefore / 1048576).toFixed(1)} -> ${(heap() / 1048576).toFixed(1)}`,
-        );
+        console.log(`[heap-probe] round ${count}`);
+        this.logSummary(heapBefore);
+    }
+
+    /** ?auto=N：以 autoplay 按鈕相同的輸入啟動，等待其結束或暫停 */
+    private async runAutoplayCheck(count: number): Promise<void> {
+        const heapBefore = GameController.heap();
+        this.handleInput({ type: 'autoStart', count });
+        for (;;) {
+            await this.waitForState(GameState.IDLE);
+            await this.delay(1);
+            if (this.state === GameState.IDLE && this.autoplayRemaining === null) break;
+        }
+        this.logSummary(heapBefore);
+    }
+
+    private static heap(): number {
+        return (performance as unknown as { memory?: { usedJSHeapSize: number } }).memory?.usedJSHeapSize ?? 0;
     }
 }

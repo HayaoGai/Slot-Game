@@ -341,8 +341,8 @@ const controlBar: NodeSpec = {
                 opacity(),
             ],
             children: [
-                { name: 'Checkmark', position: [-30, 0], size: [16, 16], components: [sprite('turboCheck', '#ffd54a')] },
-                { name: 'Label', position: [10, 0], size: [70, 30], components: [label({ text: 'TURBO', size: 18, bold: true })] },
+                { name: 'Checkmark', position: [-34, 0], size: [14, 14], components: [sprite('turboCheck', '#ffd54a')] },
+                { name: 'Label', position: [12, 0], size: [70, 30], components: [label({ text: 'TURBO', size: 17, bold: true })] },
             ],
         },
         {
@@ -380,6 +380,20 @@ const freeSpinPanel: NodeSpec = {
     key: 'freeSpinPanel',
     active: false,
     size: [DESIGN_W, DESIGN_H],
+    components: [
+        use(
+            'view/FreeSpinPanel.ts',
+            {
+                titleLabel: ref('fsTitle'),
+                remainingLabel: ref('fsRemaining'),
+                multiplierLabel: ref('fsMultiplier'),
+                overlay: ref('fsOverlay'),
+                messageLabel: ref('fsMessage'),
+                subLabel: ref('fsSub'),
+            },
+            'freeSpinPanelComp',
+        ),
+    ],
     children: [
         { name: 'HudBackground', position: [0, 318], size: [660, 58], components: [...panel('#0f5a58f0', '#46e6d6', 3, 18)] },
         { name: 'TitleLabel', position: [-210, 318], size: [220, 40], components: [label({ text: 'FREE SPINS', size: 26, color: '#8ffcef', bold: true }, 'fsTitle')] },
@@ -409,6 +423,7 @@ const gameRoot: NodeSpec = {
             winPresenter: ref('winPresenter'),
             controlBar: ref('controlBarComp'),
             balanceDisplay: ref('balanceDisplay'),
+            freeSpinPanel: ref('freeSpinPanelComp'),
             background: ref('backgroundSprite'),
         }),
     ],
