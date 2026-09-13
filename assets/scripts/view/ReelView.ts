@@ -12,6 +12,8 @@ const WINDUP_TIME = 0.1;
 const ACCELERATION = 90; // rows / s²
 const OVERSHOOT_PX = 15;
 const BOUNCE_TIME = 0.12;
+/** 填充符號與上下幾格內的符號都不重複 */
+const FILLER_SPACING = 2;
 
 type Phase = 'idle' | 'windup' | 'spin' | 'stopping' | 'bounce';
 
@@ -26,9 +28,12 @@ interface PooledSymbol {
  *
  * 以「磁帶」模型描述滾動：pos 表示最上方可視列正對 strip 的哪個索引。
  * 往下滾動時 pos 遞減，節點 y = (pos - tape) × cellHeight + cellHeight。
- * 超出下界的節點回收到最上方，並指派 strip 上的下一個符號。
+ * 超出下界的節點回收到最上方，並指派新的符號。
  *
- * 因為旋轉期間顯示的就是真實 strip 序列，停輪時只要把 pos 對齊到 SpinResult.stopIndices，
+ * strip 含堆疊與成組的符號，旋轉時若直接顯示會看到一段段相同符號，因此除了最終停輪視窗之外，
+ * 從上方進入的一律是依 strip 組成隨機抽出、且上下 FILLER_SPACING 格內不重複的填充符號（純表現，不影響結果）。
+ * 開始停輪時算出目標位置，只有 [realFrom, realTo] 這段最終視窗顯示真實 strip，
+ * 並確保這段視窗全部是之後才從上方進入的格子；pos 對齊到 SpinResult.stopIndices 後，
  * 結果符號自然會依序從上方進入可視區，不需要事後替換貼圖。
  */
 @ccclass('ReelView')
@@ -47,6 +52,9 @@ export class ReelView extends Component {
     private target = 0;
     private targetIndex = 0;
     private pendingStop: { index: number; minTravel: number } | null = null;
+    /** 磁帶座標落在 [realFrom, realTo] 的格子顯示真實 strip，其餘顯示填充符號 */
+    private realFrom = -Infinity;
+    private realTo = Infinity;
     private landed: (() => void) | null = null;
 
     get isIdle(): boolean {
@@ -67,6 +75,8 @@ export class ReelView extends Component {
             }
         }
         this.pos = initialStop;
+        this.realFrom = -Infinity;
+        this.realTo = Infinity;
         this.pool.forEach((item, i) => {
             item.tape = initialStop - 1 + i;
             item.view.setSymbol(this.symbolAt(item.tape));
@@ -78,6 +88,8 @@ export class ReelView extends Component {
         this.maxSpeed = rowsPerSecond;
         this.speed = 0;
         this.pendingStop = null;
+        this.realFrom = Infinity;
+        this.realTo = -Infinity;
         this.phase = 'windup';
         this.phaseTime = 0;
         this.phaseFrom = this.pos;
@@ -154,10 +166,15 @@ export class ReelView extends Component {
         const request = this.pendingStop!;
         this.pendingStop = null;
         const length = this.strip.length;
-        const latest = Math.floor(this.pos - request.minTravel);
+        // 池中現有的格子已顯示填充符號，停輪後的可視列必須全部是之後才從上方進入的格子
+        const poolTop = this.pool.reduce((min, item) => Math.min(min, item.tape), Infinity);
+        const latest = Math.min(Math.floor(this.pos - request.minTravel), poolTop - ROW_COUNT);
         const offset = (((latest - request.index) % length) + length) % length;
         this.target = latest - offset;
         this.targetIndex = request.index;
+        // 停輪途中可能滾過大半條 strip，只有最終視窗（含回彈時會露出的上方緩衝格）顯示真實符號
+        this.realFrom = this.target - 1;
+        this.realTo = this.target + ROW_COUNT - 1;
         this.speed = Math.max(this.speed, this.maxSpeed * 0.75, 4);
         this.enter('stopping');
     }
@@ -167,6 +184,8 @@ export class ReelView extends Component {
         const shift = this.target - this.targetIndex;
         this.pos = this.targetIndex;
         for (const item of this.pool) item.tape -= shift;
+        this.realFrom = -Infinity;
+        this.realTo = Infinity;
         this.speed = 0;
         this.enter('idle');
         this.layout();
@@ -186,27 +205,50 @@ export class ReelView extends Component {
         return this.strip[((tape % length) + length) % length];
     }
 
+    private isReal(tape: number): boolean {
+        return tape >= this.realFrom && tape <= this.realTo;
+    }
+
+    /** 某個磁帶座標目前或即將顯示的符號；尚未決定時回傳 null */
+    private symbolNear(tape: number): SymbolId | null {
+        if (this.isReal(tape)) return this.symbolAt(tape);
+        return this.pool.find((p) => p.tape === tape)?.view.id ?? null;
+    }
+
+    /** 依 strip 組成隨機抽一個與上下 FILLER_SPACING 格內都不同的符號；只影響畫面，因此直接使用 Math.random */
+    private fillerSymbol(tape: number): SymbolId {
+        const nearby: (SymbolId | null)[] = [];
+        for (let d = 1; d <= FILLER_SPACING; d++) nearby.push(this.symbolNear(tape - d), this.symbolNear(tape + d));
+        let symbol: SymbolId;
+        do symbol = this.strip[Math.floor(Math.random() * this.strip.length)];
+        while (nearby.indexOf(symbol) !== -1);
+        return symbol;
+    }
+
+    private assign(item: PooledSymbol, tape: number): void {
+        item.tape = tape;
+        item.view.setSymbol(this.isReal(tape) ? this.symbolAt(tape) : this.fillerSymbol(tape));
+    }
+
     private layout(): void {
         // 回收：向下捲出下界的移到最上方；回彈向上時反之
         let recycled = true;
         while (recycled) {
             recycled = false;
-            let min = Infinity;
-            let max = -Infinity;
+            let top = this.pool[0];
+            let bottom = this.pool[0];
             for (const item of this.pool) {
-                min = Math.min(min, item.tape);
-                max = Math.max(max, item.tape);
+                if (item.tape < top.tape) top = item;
+                if (item.tape > bottom.tape) bottom = item;
             }
             for (const item of this.pool) {
                 if (item.tape > this.pos + ROW_COUNT + 0.5) {
-                    item.tape = min - 1;
-                    item.view.setSymbol(this.symbolAt(item.tape));
+                    this.assign(item, top.tape - 1);
                     recycled = true;
                     break;
                 }
                 if (item.tape < this.pos - 1.5) {
-                    item.tape = max + 1;
-                    item.view.setSymbol(this.symbolAt(item.tape));
+                    this.assign(item, bottom.tape + 1);
                     recycled = true;
                     break;
                 }

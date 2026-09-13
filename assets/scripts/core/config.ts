@@ -25,7 +25,7 @@ export const AUTOPLAY_COUNTS: readonly number[] = [10, 25, 50];
 
 export const TARGET_RTP = 0.96;
 export const RTP_TOLERANCE = 0.005;
-export const TARGET_HIT_FREQUENCY: readonly [number, number] = [0.25, 0.32];
+export const TARGET_HIT_FREQUENCY: readonly [number, number] = [0.17, 0.23];
 
 /** 分級演出門檻（總贏分 / 總注） */
 export const WIN_TIERS = { big: 10, mega: 25, epic: 50 } as const;
