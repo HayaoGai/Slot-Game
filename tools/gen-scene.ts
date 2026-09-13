@@ -75,6 +75,5 @@ const canvas: NodeSpec = {
   ],
 };
 
-void vec2;
 writeScene(path.join(ROOT, 'assets/scenes/Main.scene'), [canvas]);
 console.log('Main.scene generated.');
