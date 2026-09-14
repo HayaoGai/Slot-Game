@@ -36,6 +36,11 @@ const REEL_WINDOW_W = REELS * CELL + (REELS - 1) * COLUMN_GAP; // 740
 const REEL_WINDOW_H = ROWS * CELL; // 420
 const REEL_AREA_Y = 40;
 const CONTROL_BAR_Y = -292;
+/** 盤面上方的 Jackpot 列 */
+const JACKPOT_BAR_Y = 318;
+/** 盤面左右兩側的 HUD（左：免費遊戲，右：Hold & Spin） */
+const SIDE_PANEL_X = 520;
+const SIDE_PANEL_SIZE: [number, number] = [200, 300];
 
 // ─── 元件工廠 ────────────────────────────────────────────────────────────
 
@@ -56,6 +61,8 @@ const panel = (fill: string, stroke: string, lineWidth: number, radius: number):
     graphics(),
     use('view/PanelGraphic.ts', { fillColor: hex(fill), strokeColor: hex(stroke), lineWidth, radius }),
 ];
+
+const rectMask = (): ComponentSpec => ({ type: 'cc.Mask', props: { _type: 0, _inverted: false, _segments: 64, _alphaThreshold: 0.1 } });
 
 const sprite = (key?: string, tint = '#ffffff'): ComponentSpec => ({
     type: 'cc.Sprite',
@@ -141,11 +148,11 @@ function textButton(name: string, x: number, y: number, w: number, h: number, te
     };
 }
 
-const caption = (text: string, y: number): NodeSpec => ({
+const caption = (text: string, y: number, textColor = '#b7a6e8'): NodeSpec => ({
     name: 'Caption',
     position: [0, y],
-    size: [160, 24],
-    components: [label({ text, size: 16, color: '#b7a6e8', bold: true })],
+    size: [180, 24],
+    components: [label({ text, size: 16, color: textColor, bold: true })],
 });
 
 // ─── 場景 ────────────────────────────────────────────────────────────────
@@ -213,7 +220,7 @@ const reelArea: NodeSpec = {
         {
             name: 'ReelMask',
             size: [REEL_WINDOW_W, REEL_WINDOW_H],
-            components: [graphics(), { type: 'cc.Mask', props: { _type: 0, _inverted: false, _segments: 64, _alphaThreshold: 0.1 } }],
+            components: [graphics(), rectMask()],
             children: [0, 1, 2, 3, 4].map((i) => ({
                 name: `Reel${i}`,
                 position: [(i - 2) * (CELL + COLUMN_GAP), 0] as [number, number],
@@ -229,6 +236,78 @@ const reelArea: NodeSpec = {
             components: [
                 graphics('paylineGraphics'),
                 use('view/PaylineRenderer.ts', { graphics: ref('paylineGraphics'), reelSet: ref('reelSet'), lineWidth: 4 }, 'paylineRenderer'),
+            ],
+        },
+    ],
+};
+
+/** Hold & Spin 盤面的單一格：底座、遮罩下的迷你滾輪、鎖定外框 */
+function respinCell(reel: number, row: number): NodeSpec {
+    const key = `respinCell${reel}${row}`;
+    return {
+        name: `Cell${reel}${row}`,
+        position: [(reel - 2) * (CELL + COLUMN_GAP), (1 - row) * CELL],
+        size: [CELL, CELL],
+        components: [use('view/RespinCell.ts', { tape: ref(`${key}Tape`), frame: ref(`${key}Frame`), cellSize: CELL }, key)],
+        children: [
+            { name: 'Tile', size: [CELL - 6, CELL - 6], components: [...panel('#1c0d33', '#ffffff1f', 2, 18)] },
+            {
+                name: 'Window',
+                size: [CELL, CELL],
+                components: [graphics(), rectMask()],
+                children: [{ name: 'Tape', key: `${key}Tape`, size: [CELL, CELL] }],
+            },
+            { name: 'Frame', size: [CELL + 12, CELL + 12], components: [graphics(`${key}Frame`)] },
+        ],
+    };
+}
+
+const respinCells: NodeSpec[] = [];
+for (let reel = 0; reel < REELS; reel++) for (let row = 0; row < ROWS; row++) respinCells.push(respinCell(reel, row));
+
+/** Hold & Spin：覆蓋在滾輪上方的 15 格盤面與右側 HUD，只在功能期間啟用 */
+const holdSpin: NodeSpec = {
+    name: 'HoldSpin',
+    position: [0, REEL_AREA_Y],
+    size: [REEL_WINDOW_W, REEL_WINDOW_H],
+    components: [
+        use(
+            'view/HoldSpinBoard.ts',
+            {
+                content: ref('holdSpinContent'),
+                // 依欄、列順序：index = reel × 3 + row
+                cells: respinCells.map((_, i) => ref(`respinCell${Math.floor(i / ROWS)}${i % ROWS}`)),
+                respinsLabel: ref('holdRespins'),
+                collectedLabel: ref('holdCollected'),
+                banner: ref('banner'),
+                display: ref('balanceDisplay'),
+                jackpotBar: ref('jackpotBarComp'),
+            },
+            'holdSpinBoard',
+        ),
+    ],
+    children: [
+        {
+            name: 'Content',
+            key: 'holdSpinContent',
+            active: false,
+            size: [REEL_WINDOW_W, REEL_WINDOW_H],
+            children: [
+                { name: 'Backdrop', size: [REEL_WINDOW_W + 16, REEL_WINDOW_H + 16], components: [...panel('#0b0618', '#00000000', 0, 14)] },
+                ...respinCells,
+                {
+                    name: 'Hud',
+                    position: [SIDE_PANEL_X, 0],
+                    size: SIDE_PANEL_SIZE,
+                    components: [...panel('#3a0f4ff0', '#ff7ad9', 3, 20)],
+                    children: [
+                        { name: 'Title', position: [0, 118], size: [190, 36], components: [label({ text: 'HOLD & SPIN', size: 24, color: '#ffb3ea', bold: true })] },
+                        caption('RESPINS', 70, '#f2b8e2'),
+                        { name: 'Respins', position: [0, 26], size: [180, 64], components: [label({ text: '3', size: 56, bold: true }, 'holdRespins')] },
+                        caption('COLLECTED', -38, '#f2b8e2'),
+                        { name: 'Collected', position: [0, -80], size: [190, 40], components: [label({ text: '0.00', size: 30, color: '#ffd54a', bold: true }, 'holdCollected')] },
+                    ],
+                },
             ],
         },
     ],
@@ -352,6 +431,41 @@ const controlBar: NodeSpec = {
     ],
 };
 
+/** 由左到右與 ui/JackpotBar.ts 的 JACKPOT_ORDER 一致；文字色與 view/bonusVisuals.ts 一致 */
+const JACKPOT_STYLES = [
+    { id: 'GRAND', fill: '#7a1022f5', stroke: '#ffd54a', text: '#ffd54a' },
+    { id: 'MAJOR', fill: '#4b1d8ff5', stroke: '#c49bff', text: '#d9b3ff' },
+    { id: 'MINOR', fill: '#0f4f8af5', stroke: '#7cc4ff', text: '#8fd3ff' },
+    { id: 'MINI', fill: '#1f6b2af5', stroke: '#8dff7a', text: '#9dff8a' },
+];
+
+const jackpotBar: NodeSpec = {
+    name: 'JackpotBar',
+    position: [0, JACKPOT_BAR_Y],
+    size: [640, 60],
+    components: [
+        use(
+            'ui/JackpotBar.ts',
+            {
+                plaques: JACKPOT_STYLES.map((s) => ref(`jackpot${s.id}`)),
+                amountLabels: JACKPOT_STYLES.map((s) => ref(`jackpot${s.id}Amount`)),
+            },
+            'jackpotBarComp',
+        ),
+    ],
+    children: JACKPOT_STYLES.map((s, i) => ({
+        name: s.id,
+        key: `jackpot${s.id}`,
+        position: [(i - 1.5) * 158, 0] as [number, number],
+        size: [150, 58] as [number, number],
+        components: [...panel(s.fill, s.stroke, 3, 14)],
+        children: [
+            { name: 'Title', position: [0, 13], size: [140, 20], components: [label({ text: s.id, size: 15, color: s.text, bold: true })] },
+            { name: 'Amount', position: [0, -10], size: [140, 28], components: [label({ text: '0.00', size: 22, bold: true }, `jackpot${s.id}Amount`)] },
+        ],
+    })),
+};
+
 const ui: NodeSpec = {
     name: 'UI',
     size: [DESIGN_W, DESIGN_H],
@@ -373,50 +487,53 @@ const ui: NodeSpec = {
             children: [caption('WIN', 34)],
         },
         textButton('CreditsButton', 566, 322, 128, 44, 'CREDITS', { fill: '#3b2a7a', stroke: '#8f7ad6', size: 20 }),
+        jackpotBar,
     ],
 };
 
+/** 免費遊戲 HUD：盤面左側 */
 const freeSpinPanel: NodeSpec = {
     name: 'FreeSpinPanel',
     key: 'freeSpinPanel',
     active: false,
-    size: [DESIGN_W, DESIGN_H],
+    position: [-SIDE_PANEL_X, REEL_AREA_Y],
+    size: SIDE_PANEL_SIZE,
     components: [
-        use(
-            'view/FreeSpinPanel.ts',
-            {
-                titleLabel: ref('fsTitle'),
-                remainingLabel: ref('fsRemaining'),
-                multiplierLabel: ref('fsMultiplier'),
-                overlay: ref('fsOverlay'),
-                messageLabel: ref('fsMessage'),
-                subLabel: ref('fsSub'),
-            },
-            'freeSpinPanelComp',
-        ),
+        ...panel('#0f5a58f0', '#46e6d6', 3, 20),
+        use('view/FreeSpinPanel.ts', { remainingLabel: ref('fsRemaining'), multiplierLabel: ref('fsMultiplier'), banner: ref('banner') }, 'freeSpinPanelComp'),
     ],
     children: [
-        { name: 'HudBackground', position: [0, 318], size: [660, 58], components: [...panel('#0f5a58f0', '#46e6d6', 3, 18)] },
-        { name: 'TitleLabel', position: [-210, 318], size: [220, 40], components: [label({ text: 'FREE SPINS', size: 26, color: '#8ffcef', bold: true }, 'fsTitle')] },
-        { name: 'RemainingLabel', position: [20, 318], size: [200, 40], components: [label({ text: 'LEFT 10', size: 26, bold: true }, 'fsRemaining')] },
-        { name: 'MultiplierLabel', position: [230, 318], size: [140, 40], components: [label({ text: 'x1', size: 34, color: '#ffd54a', bold: true, outline: ['#5a2a00', 3] }, 'fsMultiplier')] },
+        { name: 'Title', position: [0, 118], size: [190, 36], components: [label({ text: 'FREE SPINS', size: 26, color: '#8ffcef', bold: true })] },
+        caption('SPINS LEFT', 70, '#a8f5ec'),
+        { name: 'Remaining', position: [0, 26], size: [180, 64], components: [label({ text: '10', size: 56, bold: true }, 'fsRemaining')] },
+        caption('MULTIPLIER', -38, '#a8f5ec'),
+        { name: 'Multiplier', position: [0, -86], size: [180, 64], components: [label({ text: 'x1', size: 56, color: '#ffd54a', bold: true, outline: ['#5a2a00', 4] }, 'fsMultiplier')] },
+    ],
+};
+
+/** 免費遊戲與 Hold & Spin 共用的全螢幕橫幅 */
+const bannerLayer: NodeSpec = {
+    name: 'Banner',
+    size: [DESIGN_W, DESIGN_H],
+    components: [use('view/Banner.ts', { overlay: ref('bannerOverlay'), messageLabel: ref('bannerMessage'), subLabel: ref('bannerSub') }, 'banner')],
+    children: [
         {
             name: 'Overlay',
-            key: 'fsOverlay',
+            key: 'bannerOverlay',
             active: false,
             size: [1920, DESIGN_H],
             components: [...panel('#000000b8', '#00000000', 0, 0), { type: 'cc.BlockInputEvents', props: {} }, opacity()],
             children: [
-                { name: 'MessageLabel', position: [0, 70], size: [1000, 120], components: [label({ text: 'FREE SPINS', size: 92, color: '#8ffcef', bold: true, outline: ['#032626', 6] }, 'fsMessage')] },
-                { name: 'SubLabel', position: [0, -30], size: [1000, 60], components: [label({ text: '', size: 44, bold: true }, 'fsSub')] },
-                { name: 'HintLabel', position: [0, -120], size: [1000, 40], components: [label({ text: 'TAP TO CONTINUE', size: 22, color: '#b7a6e8' }, 'fsHint')] },
+                { name: 'MessageLabel', position: [0, 70], size: [1100, 120], components: [label({ text: 'FREE SPINS', size: 92, color: '#8ffcef', bold: true, outline: ['#1a0b33', 6] }, 'bannerMessage')] },
+                { name: 'SubLabel', position: [0, -30], size: [1100, 60], components: [label({ text: '', size: 44, bold: true }, 'bannerSub')] },
+                { name: 'HintLabel', position: [0, -120], size: [1000, 40], components: [label({ text: 'TAP TO CONTINUE', size: 22, color: '#b7a6e8' })] },
             ],
         },
     ],
 };
 
 /**
- * 製作者資訊彈窗。開啟按鈕放在 UI 層（免費遊戲橫幅會蓋過它），彈窗本身排在最上層。
+ * 製作者資訊彈窗。開啟按鈕放在 UI 層（橫幅會蓋過它），彈窗本身排在最上層。
  * 卡片也掛 BlockInputEvents，點卡片不會冒泡到遮罩而關閉。
  */
 const credits: NodeSpec = {
@@ -479,6 +596,9 @@ const gameRoot: NodeSpec = {
             controlBar: ref('controlBarComp'),
             balanceDisplay: ref('balanceDisplay'),
             freeSpinPanel: ref('freeSpinPanelComp'),
+            holdSpinBoard: ref('holdSpinBoard'),
+            jackpotBar: ref('jackpotBarComp'),
+            banner: ref('banner'),
             background: ref('backgroundSprite'),
         }),
     ],
@@ -510,8 +630,8 @@ const canvas: NodeSpec = {
             },
         },
     ],
-    // credits 排在最後：彈窗位於最上層，且不影響其他節點由路徑雜湊出的 id
-    children: [camera, background, reelArea, winLayer, ui, freeSpinPanel, gameRoot, credits],
+    // 由下到上的繪製順序：Hold & Spin 盤面蓋住滾輪；橫幅在 HUD 之上；製作者資訊彈窗在最上層
+    children: [camera, background, reelArea, holdSpin, winLayer, ui, freeSpinPanel, bannerLayer, gameRoot, credits],
 };
 
 writeScene(path.join(ROOT, 'assets/scenes/Main.scene'), [canvas]);
@@ -520,10 +640,19 @@ writeScene(path.join(ROOT, 'assets/scenes/Main.scene'), [canvas]);
 
 const PREFAB_DIR = path.join(ROOT, 'assets/resources/prefabs');
 
+/** 符號；BONUS 以子節點 Label 顯示獎項 */
 writePrefab(path.join(PREFAB_DIR, 'Symbol.prefab'), {
     name: 'Symbol',
     size: [CELL, CELL],
-    components: [sprite('sprite'), use('view/SymbolView.ts', { sprite: ref('sprite') })],
+    components: [sprite('sprite'), use('view/SymbolView.ts', { sprite: ref('sprite'), valueLabel: ref('valueLabel') })],
+    children: [
+        {
+            name: 'Value',
+            active: false,
+            size: [CELL - 12, 48],
+            components: [label({ text: '0.00', size: 32, bold: true, outline: ['#2a0626', 4] }, 'valueLabel')],
+        },
+    ],
 });
 
 /** 中獎格外框，由 PaylineRenderer 以 Graphics 著色繪製 */

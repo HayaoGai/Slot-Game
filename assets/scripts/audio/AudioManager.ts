@@ -7,7 +7,11 @@ export type SoundId =
     | 'bigWin'
     | 'countUp'
     | 'freeSpinTrigger'
-    | 'freeSpinEnd';
+    | 'freeSpinEnd'
+    | 'holdSpinTrigger'
+    | 'bonusLock'
+    | 'jackpotWin'
+    | 'holdSpinEnd';
 
 export interface IAudioManager {
     play(id: SoundId): void;

@@ -4,7 +4,7 @@
  *   pnpm gen:symbols
  *
  * 輸出：
- *   assets/resources/textures/symbols/<ID>.png   256x256，9 種符號
+ *   assets/resources/textures/symbols/<ID>.png   256x256，10 種符號
  *   assets/resources/textures/ui/background.png  1920x720，純裝飾背景
  *   assets/resources/textures/ui/white.png       純白小圖，供 Sprite 著色使用
  *   assets/resources/textures/ui/glow.png        放射狀光暈，供中獎演出使用
@@ -129,6 +129,20 @@ const SYMBOLS: Record<SymbolId, () => string> = {
             `<path d="${starPath(128, 136, 96, 40)}" fill="url(#star)" stroke="#e0fffb" stroke-width="6" stroke-linejoin="round"/>
              <path d="${starPath(128, 136, 50, 21)}" fill="#bffff6" fill-opacity="0.55"/>`,
             `<linearGradient id="star" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8ffcef"/><stop offset="1" stop-color="#0f9e90"/></linearGradient>`,
+        ),
+
+    /** Hold & Spin 寶珠：中央保留深色區域，獎項文字由遊戲以 Label 疊加 */
+    BONUS: () =>
+        framed(
+            { top: '#4a1450', bottom: '#16041c', border: '#ff7ad9' },
+            `<circle cx="128" cy="128" r="98" fill="url(#halo)"/>
+             <circle cx="128" cy="128" r="84" fill="url(#orb)" stroke="#ffd1f1" stroke-width="5"/>
+             <circle cx="128" cy="128" r="62" fill="url(#core)" stroke="#ffffff" stroke-opacity="0.35" stroke-width="2"/>
+             <ellipse cx="98" cy="84" rx="30" ry="14" transform="rotate(-32 98 84)" fill="#ffffff" fill-opacity="0.55"/>
+             <circle cx="176" cy="172" r="6" fill="#ffffff" fill-opacity="0.45"/>`,
+            `<radialGradient id="halo" cx="0.5" cy="0.5" r="0.5"><stop offset="0.7" stop-color="#ff7ad9" stop-opacity="0.55"/><stop offset="1" stop-color="#ff7ad9" stop-opacity="0"/></radialGradient>
+             <radialGradient id="orb" cx="0.38" cy="0.32" r="0.75"><stop offset="0" stop-color="#ffb3ea"/><stop offset="0.45" stop-color="#e23fb4"/><stop offset="1" stop-color="#6a0f5c"/></radialGradient>
+             <radialGradient id="core" cx="0.5" cy="0.55" r="0.6"><stop offset="0" stop-color="#3b0736"/><stop offset="1" stop-color="#7a1a6a"/></radialGradient>`,
         ),
 };
 

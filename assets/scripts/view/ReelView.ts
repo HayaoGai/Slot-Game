@@ -1,6 +1,7 @@
 import { _decorator, Component, instantiate, Prefab } from 'cc';
 import { ROW_COUNT } from '../core/config';
-import type { SymbolId } from '../core/types';
+import type { BonusPrize, SymbolId } from '../core/types';
+import { randomBonusPrize } from './bonusVisuals';
 import { SymbolView } from './SymbolView';
 
 const { ccclass, property } = _decorator;
@@ -23,6 +24,13 @@ interface PooledSymbol {
     tape: number;
 }
 
+interface StopRequest {
+    index: number;
+    minTravel: number;
+    /** 停輪後由上到下三格的 BONUS 獎項 */
+    prizes: readonly (BonusPrize | null)[];
+}
+
 /**
  * 單一滾輪。
  *
@@ -35,6 +43,7 @@ interface PooledSymbol {
  * 開始停輪時算出目標位置，只有 [realFrom, realTo] 這段最終視窗顯示真實 strip，
  * 並確保這段視窗全部是之後才從上方進入的格子；pos 對齊到 SpinResult.stopIndices 後，
  * 結果符號自然會依序從上方進入可視區，不需要事後替換貼圖。
+ * BONUS 的獎項同理：停輪視窗內的 BONUS 進場時就帶著引擎抽出的獎項，其餘 BONUS 顯示隨機獎項。
  */
 @ccclass('ReelView')
 export class ReelView extends Component {
@@ -51,10 +60,12 @@ export class ReelView extends Component {
     private phaseFrom = 0;
     private target = 0;
     private targetIndex = 0;
-    private pendingStop: { index: number; minTravel: number } | null = null;
+    private pendingStop: StopRequest | null = null;
+    private resultPrizes: readonly (BonusPrize | null)[] | null = null;
     /** 磁帶座標落在 [realFrom, realTo] 的格子顯示真實 strip，其餘顯示填充符號 */
     private realFrom = -Infinity;
     private realTo = Infinity;
+    private bet = 0;
     private landed: (() => void) | null = null;
 
     get isIdle(): boolean {
@@ -65,8 +76,9 @@ export class ReelView extends Component {
         return this.pendingStop !== null || this.phase === 'stopping' || this.phase === 'bounce';
     }
 
-    init(strip: readonly SymbolId[], symbolPrefab: Prefab, initialStop: number): void {
+    init(strip: readonly SymbolId[], symbolPrefab: Prefab, initialStop: number, bet: number): void {
         this.strip = strip;
+        this.bet = bet;
         if (this.pool.length === 0) {
             for (let i = 0; i < POOL_SIZE; i++) {
                 const node = instantiate(symbolPrefab);
@@ -77,11 +89,15 @@ export class ReelView extends Component {
         this.pos = initialStop;
         this.realFrom = -Infinity;
         this.realTo = Infinity;
-        this.pool.forEach((item, i) => {
-            item.tape = initialStop - 1 + i;
-            item.view.setSymbol(this.symbolAt(item.tape));
-        });
+        this.resultPrizes = null;
+        this.pool.forEach((item, i) => this.assign(item, initialStop - 1 + i));
         this.layout();
+    }
+
+    /** 下注額改變：BONUS 上的金額依新的總注重新換算 */
+    setBet(bet: number): void {
+        this.bet = bet;
+        for (const item of this.pool) item.view.setBet(bet);
     }
 
     startSpin(rowsPerSecond: number): void {
@@ -101,10 +117,10 @@ export class ReelView extends Component {
     }
 
     /** 要求停在 stopIndex；minTravel 為至少再滾動的列數，確保結果符號由上方進入。 */
-    stop(stopIndex: number, minTravel = 2): Promise<void> {
+    stop(stopIndex: number, minTravel = 2, prizes: readonly (BonusPrize | null)[] = []): Promise<void> {
         return new Promise((resolve) => {
             this.landed = resolve;
-            this.pendingStop = { index: stopIndex, minTravel };
+            this.pendingStop = { index: stopIndex, minTravel, prizes };
             if (this.phase === 'idle') this.beginStop();
         });
     }
@@ -112,6 +128,11 @@ export class ReelView extends Component {
     /** 由上到下的可視符號，供結果比對 */
     getVisibleSymbols(): SymbolId[] {
         return this.visibleViews().map((v) => v.id!);
+    }
+
+    /** 由上到下的可視 BONUS 獎項（非 BONUS 為 null），供結果比對 */
+    getVisiblePrizes(): (BonusPrize | null)[] {
+        return this.visibleViews().map((v) => v.bonusPrize);
     }
 
     /** row 0 為最上方 */
@@ -172,6 +193,7 @@ export class ReelView extends Component {
         const offset = (((latest - request.index) % length) + length) % length;
         this.target = latest - offset;
         this.targetIndex = request.index;
+        this.resultPrizes = request.prizes;
         // 停輪途中可能滾過大半條 strip，只有最終視窗（含回彈時會露出的上方緩衝格）顯示真實符號
         this.realFrom = this.target - 1;
         this.realTo = this.target + ROW_COUNT - 1;
@@ -186,6 +208,7 @@ export class ReelView extends Component {
         for (const item of this.pool) item.tape -= shift;
         this.realFrom = -Infinity;
         this.realTo = Infinity;
+        this.resultPrizes = null;
         this.speed = 0;
         this.enter('idle');
         this.layout();
@@ -225,9 +248,18 @@ export class ReelView extends Component {
         return symbol;
     }
 
+    /** 停輪視窗內的 BONUS 使用引擎結果的獎項 */
+    private resultPrizeAt(tape: number): BonusPrize | null {
+        if (!this.resultPrizes || !this.isReal(tape)) return null;
+        const row = tape - this.target;
+        return row >= 0 && row < ROW_COUNT ? this.resultPrizes[row] ?? null : null;
+    }
+
     private assign(item: PooledSymbol, tape: number): void {
         item.tape = tape;
-        item.view.setSymbol(this.isReal(tape) ? this.symbolAt(tape) : this.fillerSymbol(tape));
+        const symbol = this.isReal(tape) ? this.symbolAt(tape) : this.fillerSymbol(tape);
+        item.view.setSymbol(symbol);
+        if (symbol === 'BONUS') item.view.setBonusPrize(this.resultPrizeAt(tape) ?? randomBonusPrize(), this.bet);
     }
 
     private layout(): void {

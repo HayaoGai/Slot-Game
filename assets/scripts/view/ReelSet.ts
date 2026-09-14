@@ -1,7 +1,7 @@
 import { _decorator, Color, Component, Graphics, Prefab, Vec3 } from 'cc';
 import { AudioManager } from '../audio/AudioManager';
 import { REEL_COUNT, ROW_COUNT } from '../core/config';
-import type { Grid, Position, ReelStrips, SpinResult, SymbolId } from '../core/types';
+import type { BonusPrize, Grid, Position, ReelStrips, SpinResult, SymbolId } from '../core/types';
 import { ReelView } from './ReelView';
 import type { SymbolView } from './SymbolView';
 
@@ -20,6 +20,8 @@ export const TURBO_TIMING: ReelTiming = { speed: 26, minSpinTime: 0.15, stopDela
 
 /** 觸發免費遊戲所需的 SCATTER 數量減一：達到此數量後，剩餘欄位進入 anticipation */
 const ANTICIPATION_SCATTERS = 2;
+/** 觸發 Hold & Spin 所需的 BONUS 數量減二（單欄最多 2 個 BONUS）：達到此數量後，剩餘欄位進入 anticipation */
+const ANTICIPATION_BONUS = 4;
 
 /**
  * 管理五個滾輪：逐欄停止、anticipation 與快速停止。
@@ -47,8 +49,12 @@ export class ReelSet extends Component {
     private readonly anticipating = new Set<number>();
     private fxTime = 0;
 
-    init(strips: ReelStrips, initialStops: readonly number[], symbolPrefab: Prefab): void {
-        this.reels.forEach((reel, i) => reel.init(strips[i], symbolPrefab, initialStops[i]));
+    init(strips: ReelStrips, initialStops: readonly number[], symbolPrefab: Prefab, bet: number): void {
+        this.reels.forEach((reel, i) => reel.init(strips[i], symbolPrefab, initialStops[i], bet));
+    }
+
+    setBet(bet: number): void {
+        this.reels.forEach((reel) => reel.setBet(bet));
     }
 
     /** ReelArea 座標系中的格子中心 */
@@ -76,23 +82,24 @@ export class ReelSet extends Component {
     async stopAll(result: SpinResult, timing: ReelTiming): Promise<void> {
         const landings: Promise<void>[] = [];
         let landedScatters = 0;
+        let landedBonus = 0;
 
         for (let i = 0; i < this.reels.length; i++) {
             const reel = this.reels[i];
             if (i > 0) await this.wait(timing.stopDelay);
 
-            const anticipate = !this.quickStop && landedScatters >= ANTICIPATION_SCATTERS;
+            const anticipate = !this.quickStop && (landedScatters >= ANTICIPATION_SCATTERS || landedBonus >= ANTICIPATION_BONUS);
             if (anticipate) {
-                // 前面的欄位全部落定後才開始，讓玩家看清楚已經有兩個 SCATTER
+                // 前面的欄位全部落定後才開始，讓玩家看清楚已經差一點就能觸發
                 await Promise.all(landings);
                 for (let j = i; j < this.reels.length; j++) this.reels[j].setSpeed(timing.anticipationSpeed);
                 this.anticipating.add(i);
-                console.log(`[anticipation] reel ${i} (${landedScatters} scatters landed)`);
+                console.log(`[anticipation] reel ${i} (${landedScatters} scatters, ${landedBonus} bonus landed)`);
                 AudioManager.instance.play('anticipation');
                 await this.wait(timing.anticipationTime);
             }
 
-            const landing = reel.stop(result.stopIndices[i], this.quickStop ? 1 : 2).then(() => {
+            const landing = reel.stop(result.stopIndices[i], this.quickStop ? 1 : 2, ReelSet.prizesFor(result, i)).then(() => {
                 this.anticipating.delete(i);
                 AudioManager.instance.play('reelStop');
             });
@@ -100,6 +107,7 @@ export class ReelSet extends Component {
             if (anticipate) await landing;
 
             landedScatters += result.grid[i].filter((s) => s === 'SCATTER').length;
+            landedBonus += result.grid[i].filter((s) => s === 'BONUS').length;
         }
         await Promise.all(landings);
         this.anticipating.clear();
@@ -116,6 +124,11 @@ export class ReelSet extends Component {
 
     getVisibleGrid(): Grid {
         return this.reels.map((reel) => reel.getVisibleSymbols());
+    }
+
+    /** prizes[reel][row]，非 BONUS 為 null */
+    getVisiblePrizes(): (BonusPrize | null)[][] {
+        return this.reels.map((reel) => reel.getVisiblePrizes());
     }
 
     symbolAt(reel: number, row: number): SymbolView {
@@ -169,6 +182,15 @@ export class ReelSet extends Component {
             g.roundRect(center.x - w / 2 - 6, center.y - h / 2 - 6, w + 12, h + 12, 20);
             g.stroke();
         }
+    }
+
+    /** 結果中某一欄由上到下三格的 BONUS 獎項 */
+    static prizesFor(result: SpinResult, reel: number): (BonusPrize | null)[] {
+        const prizes: (BonusPrize | null)[] = new Array(ROW_COUNT).fill(null);
+        for (const cell of result.bonusCells) {
+            if (cell.position[0] === reel) prizes[cell.position[1]] = cell.prize;
+        }
+        return prizes;
     }
 
     private forEachVisible(fn: (view: SymbolView, reel: number, row: number) => void): void {

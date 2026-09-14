@@ -1,14 +1,17 @@
 import { _decorator, Component, Node, Sprite } from 'cc';
-import { BET_LEVELS, DEFAULT_BET_INDEX, FREE_SPIN_MAX_MULTIPLIER, FREE_SPIN_START_MULTIPLIER, INITIAL_BALANCE, REEL_COUNT } from './core/config';
+import { BET_LEVELS, DEFAULT_BET_INDEX, FREE_SPIN_MAX_MULTIPLIER, FREE_SPIN_START_MULTIPLIER, INITIAL_BALANCE, REEL_COUNT, ROW_COUNT } from './core/config';
 import { REEL_STRIPS } from './core/reelStrips';
 import { createRandom } from './core/rng';
 import { SlotEngine } from './core/slotEngine';
-import type { SpinResult } from './core/types';
+import type { BonusPrize, RespinResult, SpinResult } from './core/types';
 import { BalanceDisplay } from './ui/BalanceDisplay';
 import { ControlBar } from './ui/ControlBar';
 import { formatMoney } from './ui/format';
+import { JackpotBar } from './ui/JackpotBar';
+import { Banner } from './view/Banner';
 import { FreeSpinPanel } from './view/FreeSpinPanel';
 import { GameAssets } from './view/GameAssets';
+import { HoldSpinBoard } from './view/HoldSpinBoard';
 import { NORMAL_TIMING, ReelSet, TURBO_TIMING, type ReelTiming } from './view/ReelSet';
 import { WinPresenter } from './view/WinPresenter';
 
@@ -21,23 +24,33 @@ export enum GameState {
     STOPPING = 'STOPPING',
     EVALUATE = 'EVALUATE',
     PRESENT_WIN = 'PRESENT_WIN',
-    CHECK_FREESPIN = 'CHECK_FREESPIN',
+    CHECK_FEATURES = 'CHECK_FEATURES',
+    HOLDSPIN_INTRO = 'HOLDSPIN_INTRO',
+    HOLDSPIN_LOOP = 'HOLDSPIN_LOOP',
+    HOLDSPIN_OUTRO = 'HOLDSPIN_OUTRO',
     FREESPIN_INTRO = 'FREESPIN_INTRO',
     FREESPIN_LOOP = 'FREESPIN_LOOP',
     FREESPIN_OUTRO = 'FREESPIN_OUTRO',
 }
 
-/** 合法的狀態轉移。免費遊戲中每一轉走 FREESPIN_LOOP → SPINNING → … → FREESPIN_LOOP。 */
+/**
+ * 合法的狀態轉移。
+ * - 免費遊戲中每一轉走 FREESPIN_LOOP → SPINNING → … → FREESPIN_LOOP
+ * - Hold & Spin 每次重轉停留在 HOLDSPIN_LOOP，結束後回到觸發它的地方（CHECK_FEATURES 或 FREESPIN_LOOP）
+ */
 const TRANSITIONS: Readonly<Record<GameState, readonly GameState[]>> = {
     [GameState.IDLE]: [GameState.DEDUCT_BET],
     [GameState.DEDUCT_BET]: [GameState.SPINNING, GameState.IDLE],
     [GameState.SPINNING]: [GameState.STOPPING],
     [GameState.STOPPING]: [GameState.EVALUATE],
-    [GameState.EVALUATE]: [GameState.PRESENT_WIN, GameState.CHECK_FREESPIN, GameState.FREESPIN_LOOP],
-    [GameState.PRESENT_WIN]: [GameState.CHECK_FREESPIN, GameState.FREESPIN_LOOP],
-    [GameState.CHECK_FREESPIN]: [GameState.FREESPIN_INTRO, GameState.IDLE],
+    [GameState.EVALUATE]: [GameState.PRESENT_WIN, GameState.CHECK_FEATURES, GameState.FREESPIN_LOOP],
+    [GameState.PRESENT_WIN]: [GameState.CHECK_FEATURES, GameState.FREESPIN_LOOP],
+    [GameState.CHECK_FEATURES]: [GameState.HOLDSPIN_INTRO, GameState.FREESPIN_INTRO, GameState.IDLE],
+    [GameState.HOLDSPIN_INTRO]: [GameState.HOLDSPIN_LOOP],
+    [GameState.HOLDSPIN_LOOP]: [GameState.HOLDSPIN_OUTRO],
+    [GameState.HOLDSPIN_OUTRO]: [GameState.CHECK_FEATURES, GameState.FREESPIN_LOOP],
     [GameState.FREESPIN_INTRO]: [GameState.FREESPIN_LOOP],
-    [GameState.FREESPIN_LOOP]: [GameState.SPINNING, GameState.FREESPIN_OUTRO],
+    [GameState.FREESPIN_LOOP]: [GameState.SPINNING, GameState.HOLDSPIN_INTRO, GameState.FREESPIN_OUTRO],
     [GameState.FREESPIN_OUTRO]: [GameState.IDLE],
 };
 
@@ -89,6 +102,15 @@ export class GameController extends Component {
     @property(FreeSpinPanel)
     freeSpinPanel: FreeSpinPanel | null = null;
 
+    @property(HoldSpinBoard)
+    holdSpinBoard: HoldSpinBoard | null = null;
+
+    @property(JackpotBar)
+    jackpotBar: JackpotBar | null = null;
+
+    @property(Banner)
+    banner: Banner | null = null;
+
     @property(Sprite)
     background: Sprite | null = null;
 
@@ -104,9 +126,12 @@ export class GameController extends Component {
 
     private rounds = 0;
     private spinCount = 0;
+    private holdSpins = 0;
     private gridMismatches = 0;
+    private bonusMismatches = 0;
     private winMismatches = 0;
     private multiplierMismatches = 0;
+    private holdSpinMismatches = 0;
 
     get currentState(): GameState {
         return this.state;
@@ -135,7 +160,10 @@ export class GameController extends Component {
             REEL_STRIPS,
             REEL_STRIPS.map((strip) => layoutRng.nextInt(strip.length)),
             GameAssets.symbolPrefab,
+            this.bet,
         );
+        this.holdSpinBoard!.init(GameAssets.symbolPrefab);
+        this.jackpotBar!.setBet(this.bet);
 
         const bar = this.controlBar!.node;
         bar.on(ControlBar.EVENT_SPIN, () => this.handleInput({ type: 'spin' }));
@@ -143,7 +171,7 @@ export class GameController extends Component {
         bar.on(ControlBar.EVENT_AUTO_START, (count: number) => this.handleInput({ type: 'autoStart', count }));
         bar.on(ControlBar.EVENT_AUTO_STOP, () => this.handleInput({ type: 'autoStop' }));
         bar.on(ControlBar.EVENT_TURBO, (on: boolean) => this.handleInput({ type: 'turbo', on }));
-        this.freeSpinPanel!.overlayNode.on(Node.EventType.TOUCH_END, () => this.handleInput({ type: 'spin' }));
+        this.banner!.overlayNode.on(Node.EventType.TOUCH_END, () => this.handleInput({ type: 'spin' }));
 
         this.controlBar!.setTurbo(this.turbo);
         this.balanceDisplay!.setBalance(this.balance);
@@ -209,6 +237,13 @@ export class GameController extends Component {
             case GameState.PRESENT_WIN:
                 if (input.type === 'spin') this.winPresenter!.skip();
                 break;
+            case GameState.HOLDSPIN_LOOP:
+                if (input.type === 'spin') this.holdSpinBoard!.requestQuickStop();
+                break;
+            case GameState.HOLDSPIN_INTRO:
+            case GameState.HOLDSPIN_OUTRO:
+                if (input.type === 'spin') this.holdSpinBoard!.skip();
+                break;
             case GameState.FREESPIN_INTRO:
             case GameState.FREESPIN_LOOP:
             case GameState.FREESPIN_OUTRO:
@@ -237,7 +272,13 @@ export class GameController extends Component {
 
         await this.runSpin(this.engine.spin(bet), bet);
 
-        this.enter(GameState.CHECK_FREESPIN);
+        this.enter(GameState.CHECK_FEATURES);
+        // 同一轉同時觸發時，先進行 Hold & Spin，再進入免費遊戲
+        if (this.engine.isInHoldSpin()) {
+            this.stopAutoplay('hold & spin triggered');
+            await this.runHoldSpin();
+            this.enter(GameState.CHECK_FEATURES);
+        }
         if (this.engine.isInFreeSpin()) {
             this.stopAutoplay('free spins triggered');
             await this.runFreeSpins(bet);
@@ -273,6 +314,39 @@ export class GameController extends Component {
         }
     }
 
+    /** HOLDSPIN_INTRO → HOLDSPIN_LOOP（每次重轉）→ HOLDSPIN_OUTRO；贏分在結算後才加入餘額 */
+    private async runHoldSpin(): Promise<void> {
+        const board = this.holdSpinBoard!;
+        const state = this.engine.getHoldSpinState()!;
+        this.holdSpins++;
+        this.winPresenter!.stop();
+        board.show(state.locked, state.bet);
+
+        this.enter(GameState.HOLDSPIN_INTRO);
+        console.log(`[holdspin] triggered with ${state.locked.length} bonus${state.duringFreeSpin ? ' during free spins' : ''}`);
+        await board.showIntro(this.turbo);
+
+        let result: RespinResult;
+        let respins = 0;
+        do {
+            this.enter(GameState.HOLDSPIN_LOOP);
+            result = this.engine.respin();
+            respins++;
+            console.log(`[holdspin] respin ${respins} landed=${result.landed.length} locked=${result.locked.length} left=${result.respinsLeft}`);
+            await board.spin(result, this.turbo);
+            this.verifyRespin(result, respins);
+            if (!result.finished) await this.delay(this.turbo ? 0.15 : 0.4);
+        } while (!result.finished);
+
+        this.enter(GameState.HOLDSPIN_OUTRO);
+        const shownBefore = this.balanceDisplay!.displayedWin;
+        await board.collect(this.turbo);
+        this.verifyHoldSpinWin(result, shownBefore);
+        this.balance += result.totalWin;
+        this.balanceDisplay!.setBalance(this.balance);
+        board.hide();
+    }
+
     private async runFreeSpins(bet: number): Promise<void> {
         const panel = this.freeSpinPanel!;
         const initial = this.engine.getFreeSpinState();
@@ -298,9 +372,13 @@ export class GameController extends Component {
             );
 
             await this.runSpin(result, bet);
+            this.enter(GameState.FREESPIN_LOOP);
 
-            if (result.scatterWin) {
+            if (result.holdSpinTriggered) {
+                await this.runHoldSpin();
                 this.enter(GameState.FREESPIN_LOOP);
+            }
+            if (result.scatterWin) {
                 console.log(`[freespin] retrigger +${result.scatterWin.freeSpinsAwarded}, remaining=${after.remaining}, multiplier kept x${after.multiplier}`);
                 await panel.showRetrigger(result.scatterWin.freeSpinsAwarded, this.turbo);
             }
@@ -334,6 +412,8 @@ export class GameController extends Component {
 
     private changeBet(delta: number): void {
         this.betIndex = Math.max(0, Math.min(BET_LEVELS.length - 1, this.betIndex + delta));
+        this.reelSet!.setBet(this.bet);
+        this.jackpotBar!.setBet(this.bet);
         this.refreshControls();
     }
 
@@ -344,8 +424,15 @@ export class GameController extends Component {
         const manual = s === GameState.IDLE && this.autoplayRemaining === null;
         bar.setBet(this.bet, this.betIndex > 0, this.betIndex < BET_LEVELS.length - 1, manual);
 
-        if (s === GameState.SPINNING || s === GameState.STOPPING) bar.setSpin('stop', true);
-        else if (s === GameState.PRESENT_WIN || s === GameState.FREESPIN_INTRO || s === GameState.FREESPIN_OUTRO) bar.setSpin('skip', true);
+        if (s === GameState.SPINNING || s === GameState.STOPPING || s === GameState.HOLDSPIN_LOOP) bar.setSpin('stop', true);
+        else if (
+            s === GameState.PRESENT_WIN ||
+            s === GameState.HOLDSPIN_INTRO ||
+            s === GameState.HOLDSPIN_OUTRO ||
+            s === GameState.FREESPIN_INTRO ||
+            s === GameState.FREESPIN_OUTRO
+        )
+            bar.setSpin('skip', true);
         else bar.setSpin('spin', manual);
         bar.setAutoplay(this.autoplayRemaining, manual);
     }
@@ -360,11 +447,22 @@ export class GameController extends Component {
         this.spinCount++;
         const shown = this.reelSet!.getVisibleGrid();
         const ok = shown.every((column, reel) => column.every((symbol, row) => symbol === result.grid[reel][row]));
-        if (ok) {
-            console.log(`[verify] spin #${this.spinCount} OK stops=[${result.stopIndices.join(',')}] win=${formatMoney(result.totalWin)} x${result.multiplier}`);
+
+        const expectedPrizes: (BonusPrize | null)[][] = [];
+        for (let reel = 0; reel < REEL_COUNT; reel++) expectedPrizes.push(ReelSet.prizesFor(result, reel));
+        const prizesOk = JSON.stringify(this.reelSet!.getVisiblePrizes()) === JSON.stringify(expectedPrizes);
+        if (!prizesOk) this.bonusMismatches++;
+
+        if (ok && prizesOk) {
+            console.log(
+                `[verify] spin #${this.spinCount} OK stops=[${result.stopIndices.join(',')}] win=${formatMoney(result.totalWin)} x${result.multiplier} bonus=${result.bonusCells.length}`,
+            );
         } else {
-            this.gridMismatches++;
-            console.error(`[verify] spin #${this.spinCount} MISMATCH expected=${JSON.stringify(result.grid)} shown=${JSON.stringify(shown)}`);
+            if (!ok) this.gridMismatches++;
+            console.error(
+                `[verify] spin #${this.spinCount} MISMATCH expected=${JSON.stringify(result.grid)} shown=${JSON.stringify(shown)} ` +
+                    `expectedPrizes=${JSON.stringify(expectedPrizes)} shownPrizes=${JSON.stringify(this.reelSet!.getVisiblePrizes())}`,
+            );
         }
     }
 
@@ -380,6 +478,30 @@ export class GameController extends Component {
         else console.error(msg);
     }
 
+    /** 盤面上鎖定的獎項與引擎一致 */
+    private verifyRespin(result: RespinResult, respin: number): void {
+        const key = (reel: number, row: number) => reel * ROW_COUNT + row;
+        const expected = result.locked
+            .map((cell) => ({ position: cell.position, prize: cell.prize }))
+            .sort((a, b) => key(a.position[0], a.position[1]) - key(b.position[0], b.position[1]));
+        const shown = this.holdSpinBoard!.getLockedPrizes();
+        if (JSON.stringify(shown) === JSON.stringify(expected)) return;
+        this.holdSpinMismatches++;
+        console.error(`[verify-hold] respin #${respin} MISMATCH expected=${JSON.stringify(expected)} shown=${JSON.stringify(shown)}`);
+    }
+
+    private verifyHoldSpinWin(result: RespinResult, shownBefore: number): void {
+        const presented = this.holdSpinBoard!.lastPresentedTotal;
+        const displayed = this.balanceDisplay!.displayedWin - shownBefore;
+        const ok = presented === result.totalWin && displayed === result.totalWin;
+        if (!ok) this.holdSpinMismatches++;
+        const msg =
+            `[verify-hold] engine=${formatMoney(result.totalWin)} presented=${formatMoney(presented)} displayed=${formatMoney(displayed)} ` +
+            `bonus=${result.locked.length}${result.grand ? ' +GRAND' : ''} ${ok ? 'OK' : 'MISMATCH'}`;
+        if (ok) console.log(msg);
+        else console.error(msg);
+    }
+
     private verifyMultiplier(freeSpinNumber: number, actual: number): void {
         const expected = Math.min(FREE_SPIN_START_MULTIPLIER + freeSpinNumber - 1, FREE_SPIN_MAX_MULTIPLIER);
         if (expected !== actual) {
@@ -391,8 +513,9 @@ export class GameController extends Component {
     private logSummary(heapBefore: number): void {
         const heap = GameController.heap();
         console.log(
-            `[verify] done rounds=${this.rounds} spins=${this.spinCount} gridMismatches=${this.gridMismatches} winMismatches=${this.winMismatches} ` +
-                `multiplierMismatches=${this.multiplierMismatches} symbolNodes=${this.reelSet!.countSymbolNodes()} (expected ${REEL_COUNT * 5}) ` +
+            `[verify] done rounds=${this.rounds} spins=${this.spinCount} holdSpins=${this.holdSpins} gridMismatches=${this.gridMismatches} ` +
+                `bonusMismatches=${this.bonusMismatches} winMismatches=${this.winMismatches} multiplierMismatches=${this.multiplierMismatches} ` +
+                `holdSpinMismatches=${this.holdSpinMismatches} symbolNodes=${this.reelSet!.countSymbolNodes()} (expected ${REEL_COUNT * 5}) ` +
                 `balance=${formatMoney(this.balance)} heapMB ${(heapBefore / 1048576).toFixed(1)} -> ${(heap / 1048576).toFixed(1)}`,
         );
     }

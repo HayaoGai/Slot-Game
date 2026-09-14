@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { evaluateLine, evaluateLines, evaluateScatter, evaluateSpin } from '../../assets/scripts/core/evaluator';
+import { evaluateLine, evaluateLines, evaluateScatter, evaluateSpin, findBonusPositions } from '../../assets/scripts/core/evaluator';
 import { PAYTABLE } from '../../assets/scripts/core/paytable';
 import { gridFromRows, quietGrid } from './helpers';
 
@@ -52,6 +52,11 @@ describe('evaluateLine / evaluateLines', () => {
 
   it('WILD 不替代 SCATTER，SCATTER 會中斷連線', () => {
     const grid = quietGrid([[0, 1, 'J'], [1, 1, 'WILD'], [2, 1, 'SCATTER'], [3, 1, 'J']]);
+    expect(evaluateLine(grid, 0, LINE_BET)).toBeNull();
+  });
+
+  it('WILD 不替代 BONUS，BONUS 會中斷連線', () => {
+    const grid = quietGrid([[0, 1, 'K'], [1, 1, 'BONUS'], [2, 1, 'K'], [3, 1, 'WILD']]);
     expect(evaluateLine(grid, 0, LINE_BET)).toBeNull();
   });
 
@@ -109,6 +114,13 @@ describe('evaluateScatter', () => {
   it('SCATTER 不受 payline 限制', () => {
     const grid = quietGrid([[0, 0, 'SCATTER'], [2, 2, 'SCATTER'], [4, 1, 'SCATTER']]);
     expect(evaluateScatter(grid, TOTAL_BET)?.count).toBe(3);
+  });
+});
+
+describe('findBonusPositions', () => {
+  it('依欄、列順序列出所有 BONUS', () => {
+    const grid = quietGrid([[3, 2, 'BONUS'], [0, 1, 'BONUS'], [3, 0, 'BONUS']]);
+    expect(findBonusPositions(grid)).toEqual([[0, 1], [3, 0], [3, 2]]);
   });
 });
 

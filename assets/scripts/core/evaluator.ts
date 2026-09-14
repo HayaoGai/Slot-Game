@@ -56,6 +56,17 @@ export function evaluateScatter(grid: Grid, totalBet: number): ScatterWin | null
     };
 }
 
+/** 盤面上所有 BONUS 的座標，依欄、列順序排列（決定抽獎項時取用 RNG 的順序）。 */
+export function findBonusPositions(grid: Grid): Position[] {
+    const positions: Position[] = [];
+    grid.forEach((column, reel) => {
+        column.forEach((symbol, row) => {
+            if (symbol === 'BONUS') positions.push([reel, row]);
+        });
+    });
+    return positions;
+}
+
 export interface SpinEvaluation {
     lineWins: LineWin[];
     scatterWin: ScatterWin | null;
